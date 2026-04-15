@@ -60,7 +60,7 @@ Automatically detects and fills the login CAPTCHA on the UMT Student Portal — 
 ### Step 1 — Download
 
 ```bash
-git clone https://github.com/abdulmanan69/umt-captcha-autofill.git
+git clone https://github.com/abdulmananumt/umt-captcha-autofill.git
 ```
 
 Or download the ZIP from the [Releases](../../releases) page and extract it.
